@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mulungo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Bot registration notice (no web form) -->
+    <div id="screen-register" class="register-screen hidden">
+      <div class="register-card">
+        <div class="register-icon">📱</div>
+        <h2>Register in Telegram</h2>
+        <p class="register-subtitle">
+          Phone registration is done in the Mulungo bot — not here.<br><br>
+          1. Go back to the bot chat<br>
+          2. Send <strong>/start</strong> or <strong>/register</strong><br>
+          3. Tap <strong>📱 Share Phone Number</strong>
+        </p>
+        <button class="btn btn-primary" id="btn-recheck-register">I've Registered — Check Again</button>
+        <button class="btn btn-outline" id="btn-close-app">Back to Bot</button>
+      </div>
+    </div>
+
+    <nav class="tab-nav" id="main-nav">
+      <button class="tab-btn active" data-tab="game">🎮 Game</button>
+      <button class="tab-btn" data-tab="history">📋 History</button>
+      <button class="tab-btn" data-tab="wallet">💰 Wallet</button>
+      <button class="tab-btn" data-tab="profile">👤 Profile</button>
+    </nav>
+
+    <div id="tab-game" class="tab-content active">
+      <div id="screen-lobby" class="screen">
+        <div class="game-info-bar">
+          <div class="info-chip"><span class="label">Game ID</span><span id="lobby-game-id">—</span></div>
+          <div class="info-chip"><span class="label">Players</span><span id="lobby-players">0</span></div>
+          <div class="info-chip"><span class="label">Bet</span><span id="lobby-bet">10</span></div>
+          <div class="info-chip"><span class="label">Pot</span><span id="lobby-pot">0</span></div>
+        </div>
+        <div class="balance-bar">
+          <span>💳 Your play wallet: <strong id="lobby-balance">—</strong></span>
+        </div>
+
+        <div class="lobby-status">
+          <div class="countdown-ring">
+            <svg viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" class="ring-bg"/>
+              <circle cx="50" cy="50" r="45" class="ring-fill" id="countdown-circle"/>
+            </svg>
+            <span id="lobby-countdown">30</span>
+          </div>
+          <p class="lobby-msg">Waiting for players...</p>
+        </div>
+
+        <div class="cartela-picker">
+          <h3>Select Your Cartela</h3>
+          <p class="cartela-hint">Pick a number 1–96 to play</p>
+          <div class="cartela-grid" id="cartela-grid"></div>
+        </div>
+
+        <div id="cartela-preview" class="cartela-preview hidden">
+          <h4>Cartela Preview</h4>
+          <div class="bingo-card" id="preview-card"></div>
+          <button class="btn btn-primary" id="btn-join-game">Join Game — 10 ETB</button>
+        </div>
+      </div>
+
+      <div id="screen-game" class="screen hidden">
+        <div class="game-info-bar">
+          <div class="info-chip"><span class="label">Game</span><span id="game-id-display">—</span></div>
+          <div class="info-chip"><span class="label">Players</span><span id="game-players">0</span></div>
+          <div class="info-chip"><span class="label">Pot</span><span id="game-pot">0 ETB</span></div>
+          <div class="info-chip"><span class="label">Called</span><span id="game-called-count">0/5</span></div>
+        </div>
+
+        <div class="called-display">
+          <div class="current-number">
+            <div class="column-label" id="current-column">B</div>
+            <div class="number-big" id="current-number">—</div>
+          </div>
+          <div class="called-history" id="called-history"></div>
+        </div>
+
+        <div class="bingo-card" id="active-card"></div>
+
+        <button class="btn btn-bingo" id="btn-bingo">🎉 BINGO!</button>
+        <p class="watch-only-msg hidden" id="watch-msg">Watching — You are not in this game</p>
+      </div>
+
+      <div id="screen-gameover" class="screen hidden">
+        <div class="gameover-card">
+          <div class="crown">👑</div>
+          <h2 class="bingo-title">BINGO!</h2>
+          <p id="winners-list"></p>
+          <div class="bingo-card small" id="winning-card"></div>
+          <p class="next-game-msg">Next game starting in <span id="next-game-timer">10</span>s</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-history" class="tab-content hidden">
+      <div class="section-header">Game History</div>
+      <div id="history-list" class="history-list">
+        <p class="empty-msg">No games played yet.</p>
+      </div>
+    </div>
+
+    <div id="tab-wallet" class="tab-content hidden">
+      <div class="wallet-hero">
+        <div class="wallet-card">
+          <div class="wallet-label">Main Wallet</div>
+          <div class="wallet-amount" id="main-wallet-amount">0 ETB</div>
+        </div>
+        <div class="wallet-card play">
+          <div class="wallet-label">Play Wallet</div>
+          <div class="wallet-amount" id="play-wallet-amount">0 ETB</div>
+        </div>
+      </div>
+      <div class="wallet-actions">
+        <button class="btn btn-outline" id="btn-deposit">+ Deposit</button>
+        <button class="btn btn-outline" id="btn-withdraw">Withdraw</button>
+      </div>
+      <div class="deposit-info hidden" id="deposit-info">
+        <h4>Deposit via Telebirr</h4>
+        <p>Send ETB to: <strong>0923471256</strong></p>
+        <p>Then send <code>/confirm_deposit &lt;amount&gt; &lt;ref&gt;</code> to the bot.</p>
+      </div>
+      <div class="section-header">Recent Transactions</div>
+      <div id="txn-list" class="txn-list"></div>
+    </div>
+
+    <div id="tab-profile" class="tab-content hidden">
+      <div class="profile-hero">
+        <div class="avatar" id="profile-avatar">B</div>
+        <div class="profile-name" id="profile-name">—</div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Main Wallet</div><div class="stat-value" id="stat-main">0</div></div>
+        <div class="stat-card"><div class="stat-label">Play Wallet</div><div class="stat-value" id="stat-play">0</div></div>
+        <div class="stat-card"><div class="stat-label">Phone</div><div class="stat-value stat-phone" id="stat-phone">—</div></div>
+        <div class="stat-card"><div class="stat-label">Games Won</div><div class="stat-value" id="stat-won">0</div></div>
+        <div class="stat-card"><div class="stat-label">Total Earning</div><div class="stat-value" id="stat-earning">0</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="app.js?v=11"></script>
+</body>
+</html>

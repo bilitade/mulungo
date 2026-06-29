@@ -6,8 +6,8 @@ const {
 
 const BET_AMOUNT = 10;
 const CALL_INTERVAL_MS = 5000;
-const MAX_CALLS_PER_GAME = 5;
-const MIN_PLAYERS = 1;
+const MAX_CALLS_PER_GAME = 75;
+const MIN_PLAYERS = 2;
 const LOBBY_WAIT_MS = 30000;
 
 function generateCard(cartelaNumber) {
@@ -321,9 +321,20 @@ class GameEngine {
       return;
     }
 
+    const game = getGame(gameId);
+    if (!game || game.status !== 'active') {
+      ws.send(JSON.stringify({ type: 'BINGO_INVALID', payload: { reason: 'Game is no longer active' } }));
+      return;
+    }
+
     const cartela = getCartelaForUser(gameId, userId);
     if (!cartela) {
       ws.send(JSON.stringify({ type: 'BINGO_INVALID', payload: { reason: 'No cartela found' } }));
+      return;
+    }
+
+    if (!cartela.is_active) {
+      ws.send(JSON.stringify({ type: 'BINGO_INVALID', payload: { reason: 'You were removed from this game for a false BINGO' } }));
       return;
     }
 
@@ -338,10 +349,11 @@ class GameEngine {
       return;
     }
 
-    const game = getGame(gameId);
     const winAmount = game.derash;
-    creditWinnings(userId, winAmount, gameId);
+    // End game first — sets currentGame=null and marks DB as finished,
+    // preventing any concurrent claim or finishRound from also paying out.
     this.endGame(gameId, [{ userId, cartelaId: cartela.cartela_number, winAmount }]);
+    creditWinnings(userId, winAmount, gameId);
   }
 
   endGame(gameId, winners) {

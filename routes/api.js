@@ -23,22 +23,22 @@ function userPayload(user) {
 
 router.post('/join', (req, res) => {
   const { userId, cartelaNumber } = req.body;
-  console.log(`[JOIN] userId=${userId} cartela=${cartelaNumber}`);
 
   if (!userId || !cartelaNumber) {
-    console.log('[JOIN] Missing fields');
     return res.status(400).json({ error: 'userId and cartelaNumber required' });
   }
 
-  const registered = isUserRegistered(userId);
-  console.log(`[JOIN] isRegistered=${registered}`);
-  if (!registered) {
+  const num = parseInt(cartelaNumber, 10);
+  if (isNaN(num) || num < 1 || num > 96) {
+    return res.status(400).json({ error: 'cartelaNumber must be 1–96' });
+  }
+
+  if (!isUserRegistered(userId)) {
     return res.status(403).json({ error: 'Phone registration required before playing' });
   }
 
   const engine = req.app.locals.engine;
-  const result = engine.joinGame(String(userId), parseInt(cartelaNumber));
-  console.log(`[JOIN] result=${JSON.stringify(result)}`);
+  const result = engine.joinGame(String(userId), num);
 
   if (!result.success) {
     return res.status(400).json({ error: result.error });

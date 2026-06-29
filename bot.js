@@ -20,6 +20,9 @@ const BOT_COMMANDS = [
   { command: 'help', description: 'How to play' },
 ];
 
+// Admin-only commands (not listed in the public menu)
+// /addcredits <telegramId> <amount>
+
 function registerKeyboard() {
   return Markup.keyboard([
     [Markup.button.contactRequest('📱 Share Phone Number')],
@@ -200,17 +203,28 @@ bot.command('help', async (ctx) => {
   await ctx.reply(helpText(), { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) });
 });
 
-// Quick test credits — anyone can use /addcredits to top up their own play wallet
 bot.command('addcredits', async (ctx) => {
-  const parts = ctx.message.text.split(' ');
-  const amount = parseFloat(parts[1]) || 50;
-  if (amount <= 0 || amount > 500) {
-    return ctx.reply('Usage: /addcredits [amount]\nMax: 500 ETB per command', keyboardFor(ctx.from.id));
+  const adminId = process.env.ADMIN_CHAT_ID ? String(process.env.ADMIN_CHAT_ID) : null;
+  if (!adminId || String(ctx.from.id) !== adminId) {
+    return ctx.reply('❌ This command is restricted to admins.', keyboardFor(ctx.from.id));
   }
-  addToPlayWallet(ctx.from.id, amount, 'test_credits');
-  const user = getUser(ctx.from.id);
+  const parts = ctx.message.text.split(' ');
+  if (parts.length < 3) {
+    return ctx.reply('Usage: /addcredits <telegramId> <amount>', keyboardFor(ctx.from.id));
+  }
+  const targetId = parts[1];
+  const amount = parseFloat(parts[2]);
+  if (!targetId || isNaN(amount) || amount <= 0 || amount > 10000) {
+    return ctx.reply('Usage: /addcredits <telegramId> <amount> (max 10000)', keyboardFor(ctx.from.id));
+  }
+  const target = getUser(targetId);
+  if (!target) {
+    return ctx.reply(`❌ User ${targetId} not found.`, keyboardFor(ctx.from.id));
+  }
+  addToPlayWallet(targetId, amount, 'admin_credit');
+  const fresh = getUser(targetId);
   await ctx.reply(
-    `✅ *${amount} ETB* added to your play wallet.\n💳 Play wallet: *${user?.play_wallet || 0} ETB*\n\nTap 🎮 Play Bingo to join a game!`,
+    `✅ *${amount} ETB* credited to user ${targetId} (@${target.username || '—'}).\n💳 Their play wallet: *${fresh?.play_wallet || 0} ETB*`,
     { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
   );
 });

@@ -14,8 +14,6 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-initDB();
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -61,7 +59,7 @@ wss.on('connection', (ws) => {
 function handleWSMessage(ws, data) {
   switch (data.type) {
     case 'CLAIM_BINGO':
-      engine.claimBingo(data.userId, data.gameId, data.cartelaId, ws);
+      engine.claimBingo(data.userId, data.gameId, data.cartelaId, ws).catch(e => console.error('claimBingo error:', e));
       break;
     case 'JOIN_GAME':
       engine.addWatcher(data.gameId, ws);
@@ -70,9 +68,10 @@ function handleWSMessage(ws, data) {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`✅ Bingo server running on port ${PORT}`);
-  engine.startAutoGame();
+  await initDB();
+  await engine.startAutoGame();
 
   if (process.env.BOT_TOKEN) {
     const onRailway = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);

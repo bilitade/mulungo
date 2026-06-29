@@ -4,7 +4,7 @@ const path = require('path');
 const {
   listUsers, getUser, adminAddCredits,
   listDeposits, getDepositByRef, approveDeposit, rejectDeposit,
-  getGameHistory, db,
+  getGameHistory, query,
 } = require('../db');
 
 function requireAdmin(req, res, next) {
@@ -15,74 +15,70 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// Serve admin HTML (public — login handled client-side with token)
 router.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
 });
 
-// All API routes below require the admin token
 router.use('/api', requireAdmin);
 
-// ── Users ──────────────────────────────────────────────────
-
-router.get('/api/users', (req, res) => {
+router.get('/api/users', async (req, res) => {
   const { search, limit = 50, offset = 0 } = req.query;
-  const users = listUsers({ search, limit: parseInt(limit), offset: parseInt(offset) });
+  const users = await listUsers({ search, limit: parseInt(limit), offset: parseInt(offset) });
   res.json(users);
 });
 
-router.get('/api/users/:id', (req, res) => {
-  const user = getUser(req.params.id);
+router.get('/api/users/:id', async (req, res) => {
+  const user = await getUser(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const history = getGameHistory(req.params.id);
-  const txns = db.prepare(
-    'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT 30'
-  ).all(String(req.params.id));
-  res.json({ ...user, history, transactions: txns });
+  const history = await getGameHistory(req.params.id);
+  const txns = await query(
+    'SELECT * FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30',
+    [String(req.params.id)]
+  );
+  res.json({ ...user, history, transactions: txns.rows });
 });
 
-router.post('/api/users/:id/credits', (req, res) => {
+router.post('/api/users/:id/credits', async (req, res) => {
   const { amount, note } = req.body;
   if (!amount || isNaN(amount) || amount <= 0 || amount > 100000) {
     return res.status(400).json({ error: 'Invalid amount (1–100000)' });
   }
-  const result = adminAddCredits(req.params.id, parseFloat(amount), note || 'admin');
+  const result = await adminAddCredits(req.params.id, parseFloat(amount), note || 'admin');
   if (!result.success) return res.status(404).json({ error: result.error });
   res.json({ success: true, newBalance: result.newBalance });
 });
 
-// ── Deposits ───────────────────────────────────────────────
-
-router.get('/api/deposits', (req, res) => {
+router.get('/api/deposits', async (req, res) => {
   const { status, limit = 50, offset = 0 } = req.query;
-  const deposits = listDeposits({ status: status || undefined, limit: parseInt(limit), offset: parseInt(offset) });
+  const deposits = await listDeposits({ status: status || undefined, limit: parseInt(limit), offset: parseInt(offset) });
   res.json(deposits);
 });
 
-router.post('/api/deposits/:ref/approve', (req, res) => {
-  const result = approveDeposit(req.params.ref);
+router.post('/api/deposits/:ref/approve', async (req, res) => {
+  const result = await approveDeposit(req.params.ref);
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 
-router.post('/api/deposits/:ref/reject', (req, res) => {
+router.post('/api/deposits/:ref/reject', async (req, res) => {
   const { reason } = req.body;
-  const result = rejectDeposit(req.params.ref, reason);
+  const result = await rejectDeposit(req.params.ref, reason);
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 
-// ── Stats ──────────────────────────────────────────────────
-
-router.get('/api/stats', requireAdmin, (req, res) => {
-  const totalUsers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
-  const registeredUsers = db.prepare("SELECT COUNT(*) as c FROM users WHERE is_registered = 1").get().c;
-  const totalGames = db.prepare('SELECT COUNT(*) as c FROM games').get().c;
-  const activeGames = db.prepare("SELECT COUNT(*) as c FROM games WHERE status = 'active'").get().c;
-  const pendingDeposits = db.prepare("SELECT COUNT(*) as c FROM deposits WHERE status = 'pending'").get().c;
-  const totalDeposited = db.prepare("SELECT COALESCE(SUM(amount),0) as s FROM deposits WHERE status = 'approved'").get().s;
-  const totalWagered = db.prepare("SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE type = 'bet'").get().s;
-  const totalPaidOut = db.prepare("SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE type = 'win'").get().s;
+router.get('/api/stats', async (req, res) => {
+  const [totalUsers, registeredUsers, totalGames, activeGames, pendingDeposits, totalDeposited, totalWagered, totalPaidOut] =
+    await Promise.all([
+      query('SELECT COUNT(*) as c FROM users').then(r => parseInt(r.rows[0].c)),
+      query("SELECT COUNT(*) as c FROM users WHERE is_registered = 1").then(r => parseInt(r.rows[0].c)),
+      query('SELECT COUNT(*) as c FROM games').then(r => parseInt(r.rows[0].c)),
+      query("SELECT COUNT(*) as c FROM games WHERE status = 'active'").then(r => parseInt(r.rows[0].c)),
+      query("SELECT COUNT(*) as c FROM deposits WHERE status = 'pending'").then(r => parseInt(r.rows[0].c)),
+      query("SELECT COALESCE(SUM(amount),0) as s FROM deposits WHERE status = 'approved'").then(r => parseFloat(r.rows[0].s)),
+      query("SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE type = 'bet'").then(r => parseFloat(r.rows[0].s)),
+      query("SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE type = 'win'").then(r => parseFloat(r.rows[0].s)),
+    ]);
   res.json({ totalUsers, registeredUsers, totalGames, activeGames, pendingDeposits, totalDeposited, totalWagered, totalPaidOut });
 });
 

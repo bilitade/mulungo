@@ -100,7 +100,7 @@
   let calledNumbers = [];
   let selectedCartela = null;
   let isInGame = false;
-  let maxCallsPerGame = 5;
+  let maxCallsPerGame = 75;
   let nextGameTimer = null;
 
   // Returns the authoritative user ID — always prefer the token-authenticated one
@@ -354,6 +354,14 @@
       case 'FALSE_BINGO':
         showAlert(msg.payload.reason, 'error');
         break;
+      case 'LOBBY_STARTING': {
+        const { startsIn, playerCount: pc } = msg.payload;
+        startLobbyCountdown(startsIn);
+        document.getElementById('lobby-players').textContent = pc ?? document.getElementById('lobby-players').textContent;
+        const lobbyMsg = document.querySelector('.lobby-msg');
+        if (lobbyMsg) lobbyMsg.textContent = `${pc} player${pc !== 1 ? 's' : ''} ready — game starts in ${startsIn}s!`;
+        break;
+      }
       case 'GAME_CANCELLED':
         // Only fires when player_count > 0 — actual players got refunded
         if (isInGame) {
@@ -424,6 +432,8 @@
     document.getElementById('lobby-game-id').textContent = payload.gameId.slice(0, 8);
     document.getElementById('lobby-bet').textContent = payload.betAmount;
     document.getElementById('cartela-preview').classList.add('hidden');
+    const lobbyMsgEl = document.querySelector('.lobby-msg');
+    if (lobbyMsgEl) lobbyMsgEl.textContent = 'Waiting for players...';
     showScreen('lobby');
     startLobbyCountdown(payload.waitTime);
     refreshLobbyState();
@@ -468,7 +478,7 @@
 
   function onGameStarted(payload) {
     showScreen('game');
-    maxCallsPerGame = payload.maxCalls || 5;
+    maxCallsPerGame = payload.maxCalls || 75;
     document.getElementById('game-id-display').textContent = payload.gameId?.slice(0, 8);
     document.getElementById('game-players').textContent = payload.playerCount;
     document.getElementById('game-pot').textContent = payload.pot + ' ETB';

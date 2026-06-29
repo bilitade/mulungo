@@ -7,7 +7,7 @@ const {
 const { generateCard } = require('../gameEngine');
 const { resolveTelegramId } = require('../telegramAuth');
 
-function userPayload(user) {
+async function userPayload(user) {
   const id = String(user.telegram_id);
   return {
     id,
@@ -16,91 +16,61 @@ function userPayload(user) {
     playWallet: user.play_wallet,
     gamesWon: user.games_won,
     totalEarning: user.total_earning,
-    isRegistered: isUserRegistered(id),
+    isRegistered: await isUserRegistered(id),
     phoneNumber: user.phone_number || null,
   };
 }
 
-router.post('/join', (req, res) => {
+router.post('/join', async (req, res) => {
   const { userId, cartelaNumber } = req.body;
-
-  if (!userId || !cartelaNumber) {
-    return res.status(400).json({ error: 'userId and cartelaNumber required' });
-  }
-
+  if (!userId || !cartelaNumber) return res.status(400).json({ error: 'userId and cartelaNumber required' });
   const num = parseInt(cartelaNumber, 10);
-  if (isNaN(num) || num < 1 || num > 96) {
-    return res.status(400).json({ error: 'cartelaNumber must be 1–96' });
-  }
-
-  if (!isUserRegistered(userId)) {
-    return res.status(403).json({ error: 'Phone registration required before playing' });
-  }
-
+  if (isNaN(num) || num < 1 || num > 96) return res.status(400).json({ error: 'cartelaNumber must be 1–96' });
+  if (!(await isUserRegistered(userId))) return res.status(403).json({ error: 'Phone registration required before playing' });
   const engine = req.app.locals.engine;
-  const result = engine.joinGame(String(userId), num);
-
-  if (!result.success) {
-    return res.status(400).json({ error: result.error });
-  }
-
+  const result = await engine.joinGame(String(userId), num);
+  if (!result.success) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 
-router.get('/state', (req, res) => {
+router.get('/state', async (req, res) => {
   const engine = req.app.locals.engine;
   res.json(engine.getCurrentState());
 });
 
-router.get('/lobby', (req, res) => {
+router.get('/lobby', async (req, res) => {
   const engine = req.app.locals.engine;
   const state = engine.getCurrentState();
-  const takenCartelas = state.gameId ? getTakenCartelas(state.gameId) : [];
+  const takenCartelas = state.gameId ? await getTakenCartelas(state.gameId) : [];
   res.json({ ...state, takenCartelas });
 });
 
-router.post('/auth/token', (req, res) => {
+router.post('/auth/token', async (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'Token required' });
-
-  const user = getUserByAuthToken(token);
+  const user = await getUserByAuthToken(token);
   if (!user) return res.status(401).json({ error: 'Invalid or expired token. Open the game from the bot again.' });
-
-  res.json(userPayload(user));
+  res.json(await userPayload(user));
 });
 
-router.post('/user/register', (req, res) => {
+router.post('/user/register', async (req, res) => {
   const { username, firstName } = req.body;
   const headerInitData = req.headers['x-telegram-init-data'];
   const initData = req.body.initData || headerInitData;
-
-  const telegramId = resolveTelegramId({
-    telegramId: req.body.telegramId,
-    initData,
-    botToken: process.env.BOT_TOKEN,
-  });
-
-  if (!telegramId) {
-    return res.status(400).json({ error: 'Could not identify Telegram user. Open from the bot.' });
-  }
-
-  const user = getOrCreateUser({
-    telegramId,
-    username,
-    firstName: firstName || username,
-  });
-
-  res.json(userPayload(user));
+  const telegramId = resolveTelegramId({ telegramId: req.body.telegramId, initData, botToken: process.env.BOT_TOKEN });
+  if (!telegramId) return res.status(400).json({ error: 'Could not identify Telegram user. Open from the bot.' });
+  const user = await getOrCreateUser({ telegramId, username, firstName: firstName || username });
+  res.json(await userPayload(user));
 });
 
-router.get('/user/:telegramId', (req, res) => {
-  const user = getUser(String(req.params.telegramId));
+router.get('/user/:telegramId', async (req, res) => {
+  const user = await getUser(String(req.params.telegramId));
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json(userPayload(user));
+  res.json(await userPayload(user));
 });
 
-router.get('/history/:userId', (req, res) => {
-  const history = getGameHistory(req.params.userId);
+router.get('/history/:userId', async (req, res) => {
+  const history = await getGameHistory(req.params.userId);
   res.json(history);
 });
 

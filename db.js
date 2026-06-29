@@ -1,20 +1,19 @@
-const { Pool } = require('pg');
+const { Pool, neonConfig } = require('@neondatabase/serverless');
+const ws = require('ws');
 const crypto = require('crypto');
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Use WebSockets (port 443) instead of TCP (port 5432) — works behind firewalls
+neonConfig.webSocketConstructor = ws;
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function query(text, params) {
-  const client = await pool.connect();
-  try {
-    return await client.query(text, params);
-  } finally {
-    client.release();
-  }
+  return pool.query(text, params);
 }
 
 async function initDB() {
-  await query(`
-    CREATE TABLE IF NOT EXISTS users (
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       telegram_id TEXT UNIQUE NOT NULL,
       username TEXT,
@@ -27,9 +26,8 @@ async function initDB() {
       is_registered INTEGER DEFAULT 0,
       registered_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS games (
+    )`,
+    `CREATE TABLE IF NOT EXISTS games (
       id TEXT PRIMARY KEY,
       status TEXT DEFAULT 'waiting',
       bet_amount NUMERIC DEFAULT 10,
@@ -40,9 +38,8 @@ async function initDB() {
       started_at TIMESTAMP,
       finished_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS cartelas (
+    )`,
+    `CREATE TABLE IF NOT EXISTS cartelas (
       id SERIAL PRIMARY KEY,
       game_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
@@ -50,9 +47,8 @@ async function initDB() {
       card_data TEXT NOT NULL,
       is_active INTEGER DEFAULT 1,
       UNIQUE (game_id, cartela_number)
-    );
-
-    CREATE TABLE IF NOT EXISTS transactions (
+    )`,
+    `CREATE TABLE IF NOT EXISTS transactions (
       id SERIAL PRIMARY KEY,
       user_id TEXT NOT NULL,
       type TEXT NOT NULL,
@@ -60,16 +56,14 @@ async function initDB() {
       reference TEXT,
       game_id TEXT,
       created_at TIMESTAMP DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS auth_tokens (
+    )`,
+    `CREATE TABLE IF NOT EXISTS auth_tokens (
       token TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       expires_at TIMESTAMP NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS deposits (
+    )`,
+    `CREATE TABLE IF NOT EXISTS deposits (
       id SERIAL PRIMARY KEY,
       ref_code TEXT UNIQUE NOT NULL,
       user_id TEXT NOT NULL,
@@ -84,10 +78,13 @@ async function initDB() {
       reject_reason TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
       processed_at TIMESTAMP
-    );
-  `);
-  // Clean up expired tokens
-  await query(`DELETE FROM auth_tokens WHERE expires_at < NOW()`);
+    )`,
+    `DELETE FROM auth_tokens WHERE expires_at < NOW()`,
+  ];
+
+  for (const stmt of statements) {
+    await query(stmt);
+  }
   console.log('✅ Database initialized (Neon PostgreSQL)');
 }
 
@@ -315,15 +312,9 @@ async function approveDeposit(refCode) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(
-      `UPDATE deposits SET status = 'approved', processed_at = NOW() WHERE ref_code = $1`,
-      [dep.ref_code]
-    );
-    await client.query('UPDATE users SET play_wallet = play_wallet + $1 WHERE telegram_id = $2', [dep.amount, dep.user_id]);
-    await client.query(
-      'INSERT INTO transactions (user_id, type, amount, reference) VALUES ($1, $2, $3, $4)',
-      [dep.user_id, 'deposit', dep.amount, dep.ref_code]
-    );
+    await client.query(`UPDATE deposits SET status = 'approved', processed_at = NOW() WHERE ref_code = $1`, [dep.ref_code]);
+    await client.query(`UPDATE users SET play_wallet = play_wallet + $1 WHERE telegram_id = $2`, [dep.amount, dep.user_id]);
+    await client.query(`INSERT INTO transactions (user_id, type, amount, reference) VALUES ($1, $2, $3, $4)`, [dep.user_id, 'deposit', dep.amount, dep.ref_code]);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -382,7 +373,7 @@ async function adminAddCredits(telegramId, amount, note) {
 }
 
 module.exports = {
-  pool, query, initDB,
+  query, initDB,
   getOrCreateUser, getUser, getBalance,
   addToPlayWallet, deductPlayWallet, creditWinnings,
   createGame, getGame, getWaitingGame, getActiveGame, getTakenCartelas,

@@ -70,8 +70,13 @@ function handleWSMessage(ws, data) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
   console.log(`✅ Bingo server running on port ${PORT}`);
-  await initDB();
-  await engine.startAutoGame();
+  try {
+    await initDB();
+    await engine.startAutoGame();
+  } catch (e) {
+    console.error('⚠️  DB init failed (check DATABASE_URL / network):', e.message);
+    console.error('   The server is running but the game will not work until DB is reachable.');
+  }
 
   if (process.env.BOT_TOKEN) {
     const onRailway = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID);

@@ -79,6 +79,8 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW(),
       processed_at TIMESTAMP
     )`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_registered INTEGER DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS registered_at TIMESTAMP`,
     `DELETE FROM auth_tokens WHERE expires_at < NOW()`,
   ];
 

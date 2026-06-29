@@ -1,7 +1,9 @@
 require('dotenv').config();
 const https = require('https');
 const { Telegraf, Markup } = require('telegraf');
-const { getOrCreateUser, getUser, addToPlayWallet, registerPhone, isUserRegistered, createAuthToken } = require('./db');
+const { getOrCreateUser, getUser, addToPlayWallet, registerPhone, isUserRegistered, createAuthToken,
+        getDepositByRef, createDeposit, approveDeposit } = require('./db');
+const { fetchAndParseReceipt, extractRefCode, normalizePhone } = require('./telebirr');
 
 const bot = new Telegraf(process.env.BOT_TOKEN, {
   telegram: {
@@ -15,7 +17,7 @@ const BOT_COMMANDS = [
   { command: 'register', description: 'Register with phone number' },
   { command: 'balance', description: 'Check wallet balance' },
   { command: 'deposit', description: 'Deposit via Telebirr' },
-  { command: 'confirm_deposit', description: 'Confirm deposit (amount + ref)' },
+  { command: 'confirm_deposit', description: 'Submit Telebirr receipt to credit wallet' },
   { command: 'play', description: 'Open the game' },
   { command: 'help', description: 'How to play' },
 ];
@@ -131,17 +133,6 @@ bot.command('play', (ctx) => sendPlayLauncher(ctx));
 
 bot.hears('💼 Balance', sendBalance);
 
-bot.hears('💳 Deposit', async (ctx) => {
-  await ctx.reply(
-    `💳 *Deposit via Telebirr*\n\n` +
-    `Send ETB to: *0923471256* (Mulungo)\n\n` +
-    `Then send:\n` +
-    `/confirm_deposit 50 DFL123ABC\n\n` +
-    `(Replace 50 with your amount and DFL123ABC with your reference)`,
-    { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
-  );
-});
-
 bot.hears('❓ Help', async (ctx) => {
   await ctx.reply(helpText(), { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) });
 });
@@ -151,7 +142,7 @@ function helpText() {
     `🎱 *Mulungo Help*\n\n` +
     `*How to play:*\n` +
     `1. Register with /register — share your phone number\n` +
-    `2. Deposit ETB to your play wallet\n` +
+    `2. Deposit ETB via Telebirr and send your receipt with /confirm_deposit\n` +
     `3. Tap 🎮 Play Bingo → ▶️ Open Mulungo and pick your cartela (1-96)\n` +
     `4. Numbers are called every 5 seconds\n` +
     `5. Complete a line and claim BINGO!\n\n` +
@@ -161,40 +152,115 @@ function helpText() {
 
 bot.command('balance', sendBalance);
 
-bot.command('deposit', async (ctx) => {
-  await ctx.reply(
-    `💳 *Deposit via Telebirr*\n\n` +
-    `Send ETB to: *0923471256* (Mulungo)\n\n` +
-    `Then send:\n` +
-    `/confirm_deposit 50 DFL123ABC\n\n` +
-    `(Replace 50 with your amount and DFL123ABC with your reference)`,
-    { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
-  );
+bot.hears('💳 Deposit', async (ctx) => {
+  await ctx.reply(depositInstructions(), { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) });
 });
 
+bot.command('deposit', async (ctx) => {
+  await ctx.reply(depositInstructions(), { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) });
+});
+
+function depositInstructions() {
+  return (
+    `💳 *Deposit via Telebirr*\n\n` +
+    `1. Send ETB to: *${process.env.TELEBIRR_PHONE || '0923471256'}* (Mulungo)\n\n` +
+    `2. Open your Telebirr app → Recent transactions → tap the transfer → *Share Receipt*\n\n` +
+    `3. Send the receipt link here:\n` +
+    `/confirm_deposit https://transactioninfo.ethiotelecom.et/receipt/YOURCODE\n\n` +
+    `Or just the reference code:\n` +
+    `/confirm_deposit YOURCODE\n\n` +
+    `_Deposits are verified automatically from the official Telebirr receipt._`
+  );
+}
+
 bot.command('confirm_deposit', async (ctx) => {
-  const parts = ctx.message.text.split(' ');
-  if (parts.length < 3) {
-    return ctx.reply('Usage: /confirm_deposit <amount> <reference>', keyboardFor(ctx.from.id));
-  }
-  const amount = parseFloat(parts[1]);
-  const ref = parts[2];
-
-  if (isNaN(amount) || amount <= 0) {
-    return ctx.reply('❌ Invalid amount.', keyboardFor(ctx.from.id));
+  const parts = ctx.message.text.trim().split(/\s+/);
+  if (parts.length < 2) {
+    return ctx.reply(
+      '❌ Please include your receipt link or reference code.\n\n' +
+      'Example:\n`/confirm_deposit https://transactioninfo.ethiotelecom.et/receipt/DES7F9MJKR`\n\nor:\n`/confirm_deposit DES7F9MJKR`',
+      { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
+    );
   }
 
-  addToPlayWallet(ctx.from.id, amount, ref);
+  const refCode = extractRefCode(parts[1]);
+  if (!refCode) {
+    return ctx.reply('❌ Could not read a reference code from that. Send the full receipt URL or the code directly.', keyboardFor(ctx.from.id));
+  }
 
+  // Prevent double-use of the same receipt across any user
+  const existing = getDepositByRef(refCode);
+  if (existing) {
+    if (existing.user_id === String(ctx.from.id) && existing.status === 'approved') {
+      return ctx.reply(`⚠️ This receipt (*${refCode}*) was already used for a deposit on your account.`, { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) });
+    }
+    return ctx.reply(`❌ Receipt *${refCode}* has already been submitted. Each receipt can only be used once.`, { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) });
+  }
+
+  const processing = await ctx.reply('🔍 Fetching receipt from Telebirr…', keyboardFor(ctx.from.id));
+
+  let parsed;
+  try {
+    parsed = await fetchAndParseReceipt(refCode);
+  } catch (err) {
+    await ctx.telegram.editMessageText(ctx.chat.id, processing.message_id, null,
+      `❌ ${err.message}`, keyboardFor(ctx.from.id));
+    return;
+  }
+
+  // Verify receiver is our business number
+  const businessPhone = normalizePhone(process.env.TELEBIRR_PHONE || '0923471256');
+  const receiverOk = !parsed.receiverPhone || parsed.receiverPhone === businessPhone;
+
+  // Verify transaction was successful
+  if (!parsed.success) {
+    createDeposit({ refCode, userId: ctx.from.id, ...parsed, rawSnippet: parsed.rawSnippet });
+    return ctx.reply(
+      `❌ This transaction does not appear to be completed.\n\nReceipt: *${refCode}*\n\nIf you believe this is an error, contact support.`,
+      { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
+    );
+  }
+
+  if (!receiverOk) {
+    createDeposit({ refCode, userId: ctx.from.id, ...parsed, rawSnippet: parsed.rawSnippet });
+    const expected = process.env.TELEBIRR_PHONE || '0923471256';
+    return ctx.reply(
+      `❌ This payment was sent to *${parsed.receiverPhone || 'an unknown number'}*, not to Mulungo (*${expected}*).\n\nPlease send to *${expected}* and try again.`,
+      { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
+    );
+  }
+
+  if (!parsed.amount || parsed.amount <= 0) {
+    return ctx.reply('❌ Could not read the amount from this receipt. Please contact support with your receipt code.', keyboardFor(ctx.from.id));
+  }
+
+  // All checks passed — record and credit
+  createDeposit({ refCode, userId: ctx.from.id, ...parsed, rawSnippet: parsed.rawSnippet });
+  const result = approveDeposit(refCode);
+
+  if (!result.success) {
+    return ctx.reply(`❌ ${result.error}`, keyboardFor(ctx.from.id));
+  }
+
+  const freshUser = getUser(ctx.from.id);
   await ctx.reply(
-    `✅ Deposit of *${amount} ETB* approved!\nRef: ${ref}\n\nYour play wallet has been credited.`,
+    `✅ *Deposit Verified!*\n\n` +
+    `💰 Amount: *${parsed.amount} ETB*\n` +
+    `🔖 Ref: \`${refCode}\`\n` +
+    (parsed.date ? `📅 Date: ${parsed.date}\n` : '') +
+    `\n💳 Play wallet: *${freshUser?.play_wallet ?? 0} ETB*\n\n` +
+    `Tap 🎮 Play Bingo to start playing!`,
     { parse_mode: 'Markdown', ...keyboardFor(ctx.from.id) }
   );
 
   if (process.env.ADMIN_CHAT_ID) {
     bot.telegram.sendMessage(
       process.env.ADMIN_CHAT_ID,
-      `💰 New deposit: ${amount} ETB from @${ctx.from.username} (Ref: ${ref})`
+      `💰 Auto-verified deposit: *${parsed.amount} ETB*\n` +
+      `User: @${ctx.from.username || ctx.from.id}\n` +
+      `Ref: \`${refCode}\`\n` +
+      `Sender: ${parsed.senderPhone || '—'} (${parsed.senderName || '—'})`,
+      { parse_mode: 'Markdown' }
     );
   }
 });

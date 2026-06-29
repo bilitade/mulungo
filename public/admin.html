@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mulungo Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f1a; --surface: #1a1a2e; --surface2: #16213e;
+      --accent: #7c3aed; --accent2: #a855f7;
+      --green: #22c55e; --red: #ef4444; --yellow: #eab308; --orange: #f97316;
+      --text: #f1f5f9; --muted: #94a3b8; --border: rgba(255,255,255,0.08);
+      --radius: 10px;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
+    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { background: var(--surface); border-radius: var(--radius); padding: 32px; width: 340px; }
+    .login-card h2 { margin-bottom: 6px; font-size: 20px; }
+    .login-card p { color: var(--muted); margin-bottom: 20px; font-size: 13px; }
+    input, select, textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none; }
+    input:focus, select:focus { border-color: var(--accent); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-green { background: var(--green); color: #000; }
+    .btn-red { background: var(--red); color: white; }
+    .btn-outline { background: none; border: 1px solid var(--border); color: var(--text); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    #app { display: none; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 800; }
+    header span { color: var(--muted); font-size: 13px; }
+    header .spacer { flex: 1; }
+    nav { display: flex; gap: 4px; padding: 16px 24px 0; }
+    .nav-btn { padding: 8px 16px; background: none; border: none; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+    .nav-btn.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+    .tab-content { display: none; padding: 20px 24px; }
+    .tab-content.active { display: block; }
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border-radius: var(--radius); padding: 16px; }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .stat-value { font-size: 24px; font-weight: 800; }
+    .stat-value.green { color: var(--green); }
+    .stat-value.yellow { color: var(--yellow); }
+    .stat-value.orange { color: var(--orange); }
+    .toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+    th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); }
+    td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+    .badge-muted { background: rgba(148,163,184,0.15); color: var(--muted); }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border-radius: var(--radius); padding: 24px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+    .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+    .user-detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .user-detail-row:last-child { border-bottom: none; }
+    .user-detail-row span:first-child { color: var(--muted); }
+    .empty { color: var(--muted); padding: 32px; text-align: center; }
+    .snippet { font-family: monospace; font-size: 11px; background: var(--surface2); padding: 8px; border-radius: 6px; max-height: 100px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: var(--muted); margin-top: 8px; }
+    .error-msg { color: var(--red); font-size: 13px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-card">
+    <h2>🎱 Mulungo Admin</h2>
+    <p>Enter your admin token to continue.</p>
+    <div class="field">
+      <label>Admin Token</label>
+      <input type="password" id="token-input" placeholder="ADMIN_TOKEN" />
+    </div>
+    <p id="login-error" class="error-msg" style="display:none"></p>
+    <br>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Login</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <header>
+    <h1>🎱 Mulungo Admin</h1>
+    <span id="header-stats"></span>
+    <div class="spacer"></div>
+    <button class="btn btn-outline btn-sm" onclick="logout()">Logout</button>
+  </header>
+
+  <nav>
+    <button class="nav-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="nav-btn" onclick="switchTab('users')">Users</button>
+    <button class="nav-btn" onclick="switchTab('deposits')">Deposits</button>
+  </nav>
+
+  <!-- Dashboard tab -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value" id="s-users">—</div></div>
+      <div class="stat-card"><div class="stat-label">Registered</div><div class="stat-value green" id="s-reg">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total Games</div><div class="stat-value" id="s-games">—</div></div>
+      <div class="stat-card"><div class="stat-label">Pending Deposits</div><div class="stat-value yellow" id="s-pend">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total Deposited</div><div class="stat-value green" id="s-dep">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total Wagered</div><div class="stat-value" id="s-wag">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total Paid Out</div><div class="stat-value orange" id="s-paid">—</div></div>
+    </div>
+    <p style="color:var(--muted);font-size:13px;">Quick actions: switch to <strong>Deposits</strong> to approve pending receipts, or <strong>Users</strong> to manage players.</p>
+  </div>
+
+  <!-- Users tab -->
+  <div id="tab-users" class="tab-content">
+    <div class="toolbar">
+      <input id="user-search" placeholder="Search by name, phone, or Telegram ID…" style="max-width:340px" oninput="debounceSearchUsers()" />
+      <button class="btn btn-outline btn-sm" onclick="loadUsers()">Refresh</button>
+    </div>
+    <table id="users-table">
+      <thead><tr><th>Telegram ID</th><th>Username</th><th>Phone</th><th>Play Wallet</th><th>Main Wallet</th><th>Games Won</th><th>Actions</th></tr></thead>
+      <tbody id="users-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Deposits tab -->
+  <div id="tab-deposits" class="tab-content">
+    <div class="toolbar">
+      <select id="deposit-filter" onchange="loadDeposits()">
+        <option value="">All</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="loadDeposits()">Refresh</button>
+    </div>
+    <table>
+      <thead><tr><th>Ref Code</th><th>User</th><th>Amount</th><th>Receiver</th><th>Sender</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody id="deposits-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- User detail modal -->
+<div id="user-modal" class="modal-overlay" onclick="if(event.target===this)closeUserModal()">
+  <div class="modal">
+    <h3 id="modal-title">User Details</h3>
+    <div id="modal-user-info"></div>
+    <br>
+    <h3>Add Test Credits</h3>
+    <div class="field">
+      <label>Amount (ETB)</label>
+      <input type="number" id="credit-amount" value="50" min="1" max="100000" />
+    </div>
+    <div class="field">
+      <label>Note</label>
+      <input id="credit-note" value="test" placeholder="reason for credit" />
+    </div>
+    <p id="credit-error" class="error-msg" style="display:none"></p>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn btn-green" onclick="submitCredit()">Add Credits</button>
+      <button class="btn btn-outline" onclick="closeUserModal()">Close</button>
+    </div>
+    <br>
+    <h3>Recent Transactions</h3>
+    <div id="modal-txns"></div>
+  </div>
+</div>
+
+<!-- Deposit detail modal -->
+<div id="deposit-modal" class="modal-overlay" onclick="if(event.target===this)closeDepositModal()">
+  <div class="modal">
+    <h3>Deposit Details</h3>
+    <div id="deposit-detail"></div>
+    <div id="deposit-actions" style="display:flex;gap:10px;margin-top:16px"></div>
+    <button class="btn btn-outline" style="margin-top:10px" onclick="closeDepositModal()">Close</button>
+  </div>
+</div>
+
+<script>
+  let adminToken = sessionStorage.getItem('mulungo_admin_token') || '';
+  let currentUserId = null;
+  let currentDepRef = null;
+  let searchDebounce = null;
+
+  function api(path, opts = {}) {
+    return fetch(path, {
+      ...opts,
+      headers: { 'x-admin-token': adminToken, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    }).then(async r => {
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Request failed');
+      return d;
+    });
+  }
+
+  async function doLogin() {
+    const token = document.getElementById('token-input').value.trim();
+    if (!token) return;
+    adminToken = token;
+    try {
+      await api('/admin/api/stats');
+      sessionStorage.setItem('mulungo_admin_token', token);
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      loadStats();
+      loadUsers();
+      loadDeposits();
+    } catch {
+      document.getElementById('login-error').textContent = 'Invalid token.';
+      document.getElementById('login-error').style.display = 'block';
+    }
+  }
+
+  function logout() {
+    sessionStorage.removeItem('mulungo_admin_token');
+    location.reload();
+  }
+
+  document.getElementById('token-input').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  if (adminToken) doLogin();
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`tab-${name}`).classList.add('active');
+    event.target.classList.add('active');
+  }
+
+  // ── Stats ──────────────────────────────────────────────
+  async function loadStats() {
+    try {
+      const d = await api('/admin/api/stats');
+      document.getElementById('s-users').textContent = d.totalUsers;
+      document.getElementById('s-reg').textContent = d.registeredUsers;
+      document.getElementById('s-games').textContent = d.totalGames;
+      document.getElementById('s-pend').textContent = d.pendingDeposits;
+      document.getElementById('s-dep').textContent = d.totalDeposited.toFixed(2) + ' ETB';
+      document.getElementById('s-wag').textContent = d.totalWagered.toFixed(2) + ' ETB';
+      document.getElementById('s-paid').textContent = d.totalPaidOut.toFixed(2) + ' ETB';
+      document.getElementById('header-stats').textContent =
+        `${d.pendingDeposits} pending deposit${d.pendingDeposits !== 1 ? 's' : ''}`;
+    } catch (e) { console.error(e); }
+  }
+
+  // ── Users ──────────────────────────────────────────────
+  async function loadUsers() {
+    const search = document.getElementById('user-search').value;
+    try {
+      const users = await api(`/admin/api/users?search=${encodeURIComponent(search)}&limit=100`);
+      const tbody = document.getElementById('users-tbody');
+      if (!users.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No users found.</td></tr>'; return; }
+      tbody.innerHTML = users.map(u => `
+        <tr>
+          <td><code>${u.telegram_id}</code></td>
+          <td>${u.username || '—'} ${u.is_registered ? '<span class="badge badge-green">✓ reg</span>' : ''}</td>
+          <td>${u.phone_number || '—'}</td>
+          <td><strong>${(u.play_wallet||0).toFixed(2)}</strong> ETB</td>
+          <td>${(u.main_wallet||0).toFixed(2)} ETB</td>
+          <td>${u.games_won || 0}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="openUserModal('${u.telegram_id}', '${escHtml(u.username||u.telegram_id)}')">Manage</button></td>
+        </tr>
+      `).join('');
+    } catch (e) { console.error(e); }
+  }
+
+  function debounceSearchUsers() {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(loadUsers, 300);
+  }
+
+  async function openUserModal(id, name) {
+    currentUserId = id;
+    document.getElementById('modal-title').textContent = `User: ${name} (${id})`;
+    document.getElementById('credit-error').style.display = 'none';
+    document.getElementById('user-modal').classList.add('open');
+    try {
+      const u = await api(`/admin/api/users/${id}`);
+      document.getElementById('modal-user-info').innerHTML = `
+        <div class="user-detail-row"><span>Telegram ID</span><span><code>${u.telegram_id}</code></span></div>
+        <div class="user-detail-row"><span>Username</span><span>${u.username || '—'}</span></div>
+        <div class="user-detail-row"><span>Phone</span><span>${u.phone_number || '—'}</span></div>
+        <div class="user-detail-row"><span>Registered</span><span>${u.is_registered ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-muted">No</span>'}</span></div>
+        <div class="user-detail-row"><span>Play Wallet</span><span><strong>${(u.play_wallet||0).toFixed(2)} ETB</strong></span></div>
+        <div class="user-detail-row"><span>Main Wallet</span><span>${(u.main_wallet||0).toFixed(2)} ETB</span></div>
+        <div class="user-detail-row"><span>Games Won</span><span>${u.games_won || 0}</span></div>
+        <div class="user-detail-row"><span>Total Earning</span><span>${(u.total_earning||0).toFixed(2)} ETB</span></div>
+        <div class="user-detail-row"><span>Joined</span><span>${u.created_at || '—'}</span></div>
+      `;
+      const txns = u.transactions || [];
+      document.getElementById('modal-txns').innerHTML = txns.length === 0
+        ? '<p style="color:var(--muted);font-size:13px">No transactions.</p>'
+        : '<table style="width:100%;margin-top:8px"><thead><tr><th>Type</th><th>Amount</th><th>Ref</th><th>Date</th></tr></thead><tbody>' +
+          txns.map(t => `<tr>
+            <td><span class="badge ${t.type==='win'?'badge-green':t.type==='deposit'||t.type==='bonus'?'badge-yellow':'badge-muted'}">${t.type}</span></td>
+            <td>${t.amount > 0 ? '+' : ''}${t.amount} ETB</td>
+            <td><code style="font-size:11px">${t.reference || t.game_id || '—'}</code></td>
+            <td style="font-size:11px;color:var(--muted)">${t.created_at?.slice(0,16) || ''}</td>
+          </tr>`).join('') + '</tbody></table>';
+    } catch (e) { console.error(e); }
+  }
+
+  function closeUserModal() { document.getElementById('user-modal').classList.remove('open'); currentUserId = null; }
+
+  async function submitCredit() {
+    const amount = parseFloat(document.getElementById('credit-amount').value);
+    const note = document.getElementById('credit-note').value;
+    const errEl = document.getElementById('credit-error');
+    if (!amount || amount <= 0) { errEl.textContent = 'Enter a valid amount.'; errEl.style.display = 'block'; return; }
+    try {
+      const res = await api(`/admin/api/users/${currentUserId}/credits`, { method: 'POST', body: { amount, note } });
+      errEl.style.display = 'none';
+      alert(`✅ ${amount} ETB added. New play balance: ${res.newBalance} ETB`);
+      openUserModal(currentUserId, currentUserId);
+      loadStats();
+      loadUsers();
+    } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  }
+
+  // ── Deposits ────────────────────────────────────────────
+  async function loadDeposits() {
+    const status = document.getElementById('deposit-filter').value;
+    try {
+      const deps = await api(`/admin/api/deposits?status=${status}&limit=100`);
+      const tbody = document.getElementById('deposits-tbody');
+      if (!deps.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No deposits found.</td></tr>'; return; }
+      tbody.innerHTML = deps.map(d => `
+        <tr>
+          <td><code>${d.ref_code}</code></td>
+          <td>${d.username || d.user_id}</td>
+          <td>${d.amount != null ? d.amount + ' ETB' : '—'}</td>
+          <td style="font-size:12px">${d.receiver_phone || '—'}</td>
+          <td style="font-size:12px">${d.sender_phone || '—'}${d.sender_name ? '<br><span style="color:var(--muted)">'+escHtml(d.sender_name)+'</span>' : ''}</td>
+          <td style="font-size:11px;color:var(--muted)">${d.created_at?.slice(0,16) || ''}</td>
+          <td>${statusBadge(d.status)}</td>
+          <td>
+            <button class="btn btn-outline btn-sm" onclick="openDepositModal(${JSON.stringify(escHtml(JSON.stringify(d)))})">Detail</button>
+            ${d.status === 'pending' ? `
+              <button class="btn btn-green btn-sm" onclick="quickApprove('${d.ref_code}')">Approve</button>
+              <button class="btn btn-red btn-sm" onclick="quickReject('${d.ref_code}')">Reject</button>
+            ` : ''}
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) { console.error(e); }
+  }
+
+  function statusBadge(s) {
+    if (s === 'approved') return '<span class="badge badge-green">approved</span>';
+    if (s === 'rejected') return '<span class="badge badge-red">rejected</span>';
+    return '<span class="badge badge-yellow">pending</span>';
+  }
+
+  function openDepositModal(escapedJson) {
+    const d = JSON.parse(escapedJson);
+    currentDepRef = d.ref_code;
+    document.getElementById('deposit-detail').innerHTML = `
+      <div class="user-detail-row"><span>Ref Code</span><span><code>${d.ref_code}</code></span></div>
+      <div class="user-detail-row"><span>User</span><span>${d.username || d.user_id}</span></div>
+      <div class="user-detail-row"><span>Amount</span><span><strong>${d.amount != null ? d.amount + ' ETB' : '—'}</strong></span></div>
+      <div class="user-detail-row"><span>Receiver Phone</span><span>${d.receiver_phone || '—'}</span></div>
+      <div class="user-detail-row"><span>Receiver Name</span><span>${d.receiver_name || '—'}</span></div>
+      <div class="user-detail-row"><span>Sender Phone</span><span>${d.sender_phone || '—'}</span></div>
+      <div class="user-detail-row"><span>Sender Name</span><span>${d.sender_name || '—'}</span></div>
+      <div class="user-detail-row"><span>Date</span><span>${d.date || d.created_at || '—'}</span></div>
+      <div class="user-detail-row"><span>Status</span><span>${statusBadge(d.status)}</span></div>
+      ${d.reject_reason ? `<div class="user-detail-row"><span>Reject Reason</span><span style="color:var(--red)">${escHtml(d.reject_reason)}</span></div>` : ''}
+      ${d.receipt_url ? `<div class="user-detail-row"><span>Receipt URL</span><span><a href="${d.receipt_url}" target="_blank" style="color:var(--accent2)">Open ↗</a></span></div>` : ''}
+      ${d.raw_snippet ? `<div class="snippet">${escHtml(d.raw_snippet)}</div>` : ''}
+    `;
+    const actions = document.getElementById('deposit-actions');
+    if (d.status === 'pending') {
+      actions.innerHTML = `
+        <button class="btn btn-green" onclick="quickApprove('${d.ref_code}')">✅ Approve</button>
+        <button class="btn btn-red" onclick="quickReject('${d.ref_code}')">❌ Reject</button>
+      `;
+    } else {
+      actions.innerHTML = '';
+    }
+    document.getElementById('deposit-modal').classList.add('open');
+  }
+
+  function closeDepositModal() { document.getElementById('deposit-modal').classList.remove('open'); currentDepRef = null; }
+
+  async function quickApprove(ref) {
+    if (!confirm(`Approve deposit ${ref}?`)) return;
+    try {
+      await api(`/admin/api/deposits/${ref}/approve`, { method: 'POST' });
+      closeDepositModal();
+      loadDeposits();
+      loadStats();
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  async function quickReject(ref) {
+    const reason = prompt('Rejection reason (optional):') ?? '';
+    try {
+      await api(`/admin/api/deposits/${ref}/reject`, { method: 'POST', body: { reason } });
+      closeDepositModal();
+      loadDeposits();
+      loadStats();
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

@@ -93,6 +93,24 @@ function initDB() {
       game_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Telebirr deposit submissions (ref_code globally unique — prevents double-spend)
+    CREATE TABLE IF NOT EXISTS deposits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ref_code TEXT UNIQUE NOT NULL,
+      user_id TEXT NOT NULL,
+      amount REAL,
+      receiver_phone TEXT,
+      receiver_name TEXT,
+      sender_phone TEXT,
+      sender_name TEXT,
+      receipt_url TEXT,
+      raw_snippet TEXT,
+      status TEXT DEFAULT 'pending',
+      reject_reason TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      processed_at DATETIME
+    );
   `);
   migrateUsersTable();
   migrateAuthTokensTable();
@@ -339,6 +357,81 @@ function getGameHistory(userId) {
   `).all(String(userId), String(userId));
 }
 
+// ── Deposit functions ─────────────────────────────────────
+
+function getDepositByRef(refCode) {
+  return db.prepare('SELECT * FROM deposits WHERE ref_code = ?').get(refCode.toUpperCase());
+}
+
+function createDeposit({ refCode, userId, amount, receiverPhone, receiverName, senderPhone, senderName, receiptUrl, rawSnippet }) {
+  try {
+    db.prepare(`
+      INSERT INTO deposits
+        (ref_code, user_id, amount, receiver_phone, receiver_name, sender_phone, sender_name, receipt_url, raw_snippet, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `).run(refCode.toUpperCase(), String(userId), amount, receiverPhone, receiverName, senderPhone, senderName, receiptUrl, rawSnippet);
+    return true;
+  } catch (e) {
+    if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') return false;
+    throw e;
+  }
+}
+
+function approveDeposit(refCode) {
+  const dep = getDepositByRef(refCode);
+  if (!dep) return { success: false, error: 'Deposit not found' };
+  if (dep.status === 'approved') return { success: false, error: 'Already approved' };
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE deposits SET status = 'approved', processed_at = CURRENT_TIMESTAMP WHERE ref_code = ?
+    `).run(dep.ref_code);
+    addToPlayWallet(dep.user_id, dep.amount, dep.ref_code);
+  })();
+
+  return { success: true, deposit: { ...dep, status: 'approved' } };
+}
+
+function rejectDeposit(refCode, reason) {
+  const dep = getDepositByRef(refCode);
+  if (!dep) return { success: false, error: 'Deposit not found' };
+  if (dep.status === 'approved') return { success: false, error: 'Already approved — cannot reject' };
+
+  db.prepare(`
+    UPDATE deposits SET status = 'rejected', reject_reason = ?, processed_at = CURRENT_TIMESTAMP WHERE ref_code = ?
+  `).run(reason || 'Rejected by admin', dep.ref_code);
+
+  return { success: true };
+}
+
+function listDeposits({ status, limit = 50, offset = 0 } = {}) {
+  if (status) {
+    return db.prepare(
+      'SELECT d.*, u.username, u.phone_number FROM deposits d LEFT JOIN users u ON d.user_id = u.telegram_id WHERE d.status = ? ORDER BY d.created_at DESC LIMIT ? OFFSET ?'
+    ).all(status, limit, offset);
+  }
+  return db.prepare(
+    'SELECT d.*, u.username, u.phone_number FROM deposits d LEFT JOIN users u ON d.user_id = u.telegram_id ORDER BY d.created_at DESC LIMIT ? OFFSET ?'
+  ).all(limit, offset);
+}
+
+function listUsers({ search, limit = 50, offset = 0 } = {}) {
+  if (search) {
+    const q = `%${search}%`;
+    return db.prepare(
+      'SELECT * FROM users WHERE username LIKE ? OR phone_number LIKE ? OR telegram_id LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    ).all(q, q, q, limit, offset);
+  }
+  return db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+}
+
+function adminAddCredits(telegramId, amount, note) {
+  const user = getUser(telegramId);
+  if (!user) return { success: false, error: 'User not found' };
+  addToPlayWallet(telegramId, amount, `admin:${note || 'manual'}`);
+  return { success: true, newBalance: (user.play_wallet + amount) };
+}
+
 module.exports = {
   initDB, db,
   getOrCreateUser, getUser, getBalance,
@@ -348,4 +441,6 @@ module.exports = {
   addPlayerToGame, getCartelaForUser, getGameHistory,
   normalizePhone, isUserRegistered, registerPhone,
   createAuthToken, getUserByAuthToken,
+  getDepositByRef, createDeposit, approveDeposit, rejectDeposit, listDeposits,
+  listUsers, adminAddCredits,
 };

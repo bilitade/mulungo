@@ -7,6 +7,7 @@ const path = require('path');
 const { initDB } = require('./db');
 const apiRoutes = require('./routes/api');
 const walletRoutes = require('./routes/wallet');
+const adminRoutes = require('./routes/admin');
 const { GameEngine } = require('./gameEngine');
 
 const app = express();
@@ -21,6 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/api', apiRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/admin', adminRoutes);
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
